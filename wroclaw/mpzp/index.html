@@ -176,12 +176,13 @@ map.on('load', async () => {
 
     const el = document.createElement('div');
     el.style.fontSize = '11px';
-    el.style.color = '#111';
-    el.style.background = 'rgba(255,255,255,0.85)';
-    el.style.padding = '1px 4px';
-    el.style.borderRadius = '3px';
-    el.style.border = '1px solid rgba(0,0,0,0.15)';
+    el.style.color = '#000';
+    el.style.background = 'transparent';   // ❗ brak tła
+    el.style.padding = '0';                // ❗ brak paddingu
+    el.style.border = 'none';              // ❗ brak ramki
     el.style.whiteSpace = 'nowrap';
+    el.style.fontWeight = '600';           // opcjonalnie pogrubienie
+    el.style.textShadow = '0 0 3px white'; // 🔥 żeby było czytelne na mapie
     el.textContent = String(label);
 
     new maplibregl.Marker({
