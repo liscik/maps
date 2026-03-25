@@ -1,1 +1,170 @@
-test
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>MPZP Wrocław</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      font-family: Arial, sans-serif;
+    }
+    #map {
+      width: 100%;
+      height: 100vh;
+    }
+    .maplibregl-popup-content {
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 320px;
+    }
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: white;
+      padding: 10px 12px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      z-index: 10;
+      font-size: 13px;
+    }
+    .legend .box {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-right: 6px;
+      background: rgba(74, 144, 226, 0.45);
+      border: 1px solid #1F4E79;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="legend"><span class="box"></span> MPZP Wrocław</div>
+
+<script>
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  center: [17.03, 51.11],
+  zoom: 11
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function addCoordsToBounds(coords, bounds) {
+  if (!Array.isArray(coords)) return;
+  if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+    bounds.extend(coords);
+    return;
+  }
+  for (const c of coords) {
+    addCoordsToBounds(c, bounds);
+  }
+}
+
+map.on('load', async () => {
+  const polygons = await fetch('./polygons.geojson').then(r => r.json());
+  const labels = await fetch('./labels.geojson').then(r => r.json());
+
+  map.addSource('plans', {
+    type: 'geojson',
+    data: polygons
+  });
+
+  map.addSource('labels', {
+    type: 'geojson',
+    data: labels
+  });
+
+  map.addLayer({
+    id: 'plans-fill',
+    type: 'fill',
+    source: 'plans',
+    paint: {
+      'fill-color': '#4A90E2',
+      'fill-opacity': 0.30
+    }
+  });
+
+  map.addLayer({
+    id: 'plans-line',
+    type: 'line',
+    source: 'plans',
+    paint: {
+      'line-color': '#1F4E79',
+      'line-width': 1
+    }
+  });
+
+  map.addLayer({
+    id: 'labels-layer',
+    type: 'symbol',
+    source: 'labels',
+    minzoom: 12,
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-size': 11,
+      'text-anchor': 'center',
+      'text-allow-overlap': false
+    },
+    paint: {
+      'text-color': '#111111',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 1.5
+    }
+  });
+
+  const bounds = new maplibregl.LngLatBounds();
+  for (const feature of polygons.features) {
+    if (feature.geometry && feature.geometry.coordinates) {
+      addCoordsToBounds(feature.geometry.coordinates, bounds);
+    }
+  }
+  if (!bounds.isEmpty()) {
+    map.fitBounds(bounds, { padding: 30 });
+  }
+
+  map.on('click', 'plans-fill', (e) => {
+    const props = e.features[0].properties || {};
+    let html = '';
+    for (const [key, value] of Object.entries(props)) {
+      if (key !== 'label') {
+        html += `<div><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
+      }
+    }
+
+    new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(html)
+      .addTo(map);
+  });
+
+  map.on('mouseenter', 'plans-fill', () => {
+    map.getCanvas().style.cursor = 'pointer';
+  });
+
+  map.on('mouseleave', 'plans-fill', () => {
+    map.getCanvas().style.cursor = '';
+  });
+});
+</script>
+</body>
+</html>
