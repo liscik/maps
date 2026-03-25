@@ -80,18 +80,41 @@ function addCoordsToBounds(coords, bounds) {
   }
 }
 
+function getCentroidFromFeature(feature) {
+  const geom = feature.geometry;
+  if (!geom || !geom.coordinates) return null;
+
+  let points = [];
+
+  function collect(coords) {
+    if (!Array.isArray(coords)) return;
+    if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      points.push(coords);
+      return;
+    }
+    for (const c of coords) collect(c);
+  }
+
+  collect(geom.coordinates);
+
+  if (!points.length) return null;
+
+  let sumX = 0;
+  let sumY = 0;
+  for (const p of points) {
+    sumX += p[0];
+    sumY += p[1];
+  }
+
+  return [sumX / points.length, sumY / points.length];
+}
+
 map.on('load', async () => {
-  const polygons = await fetch('./polygons.geojson').then(r => r.json());
-  const labels = await fetch('./labels.geojson').then(r => r.json());
+  const geojson = await fetch('./wroclaw_mpzp.geojson').then(r => r.json());
 
   map.addSource('plans', {
     type: 'geojson',
-    data: polygons
-  });
-
-  map.addSource('labels', {
-    type: 'geojson',
-    data: labels
+    data: geojson
   });
 
   map.addLayer({
@@ -114,26 +137,8 @@ map.on('load', async () => {
     }
   });
 
-  map.addLayer({
-    id: 'labels-layer',
-    type: 'symbol',
-    source: 'labels',
-    minzoom: 12,
-    layout: {
-      'text-field': ['get', 'label'],
-      'text-size': 11,
-      'text-anchor': 'center',
-      'text-allow-overlap': false
-    },
-    paint: {
-      'text-color': '#111111',
-      'text-halo-color': '#ffffff',
-      'text-halo-width': 1.5
-    }
-  });
-
   const bounds = new maplibregl.LngLatBounds();
-  for (const feature of polygons.features) {
+  for (const feature of geojson.features) {
     if (feature.geometry && feature.geometry.coordinates) {
       addCoordsToBounds(feature.geometry.coordinates, bounds);
     }
@@ -146,9 +151,7 @@ map.on('load', async () => {
     const props = e.features[0].properties || {};
     let html = '';
     for (const [key, value] of Object.entries(props)) {
-      if (key !== 'label') {
-        html += `<div><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
-      }
+      html += `<div><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
     }
 
     new maplibregl.Popup()
@@ -164,6 +167,31 @@ map.on('load', async () => {
   map.on('mouseleave', 'plans-fill', () => {
     map.getCanvas().style.cursor = '';
   });
+
+  // Proste etykiety jako markery z PLA_NR
+  for (const feature of geojson.features) {
+    const centroid = getCentroidFromFeature(feature);
+    const label = feature.properties && feature.properties.PLA_NR;
+
+    if (!centroid || label === null || label === undefined || label === '') continue;
+
+    const el = document.createElement('div');
+    el.style.fontSize = '11px';
+    el.style.color = '#111';
+    el.style.background = 'rgba(255,255,255,0.85)';
+    el.style.padding = '1px 4px';
+    el.style.borderRadius = '3px';
+    el.style.border = '1px solid rgba(0,0,0,0.15)';
+    el.style.whiteSpace = 'nowrap';
+    el.textContent = String(label);
+
+    new maplibregl.Marker({
+      element: el,
+      anchor: 'center'
+    })
+      .setLngLat(centroid)
+      .addTo(map);
+  }
 });
 </script>
 </body>
