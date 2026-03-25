@@ -168,7 +168,6 @@ map.on('load', async () => {
     map.getCanvas().style.cursor = '';
   });
 
-  // Proste etykiety jako markery z PLA_NR
   for (const feature of geojson.features) {
     const centroid = getCentroidFromFeature(feature);
     const label = feature.properties && feature.properties.PLA_NR;
