@@ -1,145 +1,227 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <title>MPZP Gdańsk – ZP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MPZP Gdańsk - ZP</title>
 
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.8.0/ol.css" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js"></script>
 
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      font-family: Arial, sans-serif;
-    }
-
-    #map {
-      width: 100%;
-      height: 100%;
-    }
-
-    .panel {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      z-index: 1000;
-      background: rgba(255,255,255,0.95);
-      padding: 10px 12px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-      max-width: 320px;
-      font-size: 14px;
-      line-height: 1.4;
-    }
-
-    .panel b {
-      display: block;
-      margin-bottom: 4px;
-    }
+    html, body { margin:0; padding:0; height:100%; }
+    #map { width:100%; height:100vh; }
   </style>
 </head>
 <body>
-  <div class="panel">
-    <b>MPZP Gdańsk</b>
-    Warstwa: <code>SYMBOL = "ZP"</code><br>
-    Źródło: <code>mpzp_gdańsk_symbole.geojson</code><br>
-    Układ danych: <code>EPSG:2177</code>
-  </div>
 
-  <div id="map"></div>
+<div id="map"></div>
 
-  <script type="module">
-    import Map from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/Map.js';
-    import View from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/View.js';
-    import TileLayer from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/layer/Tile.js';
-    import VectorLayer from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/layer/Vector.js';
-    import VectorSource from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/source/Vector.js';
-    import OSM from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/source/OSM.js';
-    import GeoJSON from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/format/GeoJSON.js';
-    import Style from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/style/Style.js';
-    import Fill from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/style/Fill.js';
-    import Stroke from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/style/Stroke.js';
-    import proj4 from 'https://cdn.jsdelivr.net/npm/proj4@2.11.0/+esm';
-    import {register} from 'https://cdn.jsdelivr.net/npm/ol@10.8.0/proj/proj4.js';
+<script>
+function getViewFromUrl() {
+  const params = new URLSearchParams(window.location.search);
 
-    // EPSG:2177
-    proj4.defs(
-      'EPSG:2177',
-      '+proj=tmerc +lat_0=0 +lon_0=18 +k=0.999923 +x_0=6500000 +y_0=0 +ellps=GRS80 +units=m +no_defs +type=crs'
-    );
-    register(proj4);
+  const lng = parseFloat(params.get('lng'));
+  const lat = parseFloat(params.get('lat'));
+  const z = parseFloat(params.get('z'));
 
-    const map = new Map({
-      target: 'map',
-      layers: [
-        new TileLayer({
-          source: new OSM()
-        })
-      ],
-      view: new View({
-        center: [2080000, 7100000], // startowy widok w EPSG:3857
-        zoom: 11
-      })
+  const hasValidLng = !isNaN(lng) && lng >= -180 && lng <= 180;
+  const hasValidLat = !isNaN(lat) && lat >= -90 && lat <= 90;
+  const hasValidZoom = !isNaN(z) && z >= 0 && z <= 24;
+
+  return {
+    center: (hasValidLng && hasValidLat) ? [lng, lat] : [18.6466, 54.3520],
+    zoom: hasValidZoom ? z : 11
+  };
+}
+
+function updateUrlFromMap(map) {
+  const center = map.getCenter();
+  const zoom = map.getZoom();
+
+  const params = new URLSearchParams(window.location.search);
+  params.set('lng', center.lng.toFixed(6));
+  params.set('lat', center.lat.toFixed(6));
+  params.set('z', zoom.toFixed(2));
+
+  const newUrl = `${window.location.pathname}?${params.toString()}`;
+  window.history.replaceState({}, '', newUrl);
+}
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function addCoordsToBounds(coords, bounds) {
+  if (!Array.isArray(coords)) return;
+  if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+    bounds.extend(coords);
+    return;
+  }
+  for (const c of coords) {
+    addCoordsToBounds(c, bounds);
+  }
+}
+
+function transformCoords(coords) {
+  if (!Array.isArray(coords)) return coords;
+
+  if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+    return proj4('EPSG:2177', 'EPSG:4326', coords);
+  }
+
+  return coords.map(transformCoords);
+}
+
+function transformFeatureGeometry(feature) {
+  if (!feature || !feature.geometry || !feature.geometry.coordinates) return feature;
+
+  return {
+    ...feature,
+    geometry: {
+      ...feature.geometry,
+      coordinates: transformCoords(feature.geometry.coordinates)
+    }
+  };
+}
+
+function filterAndTransformGeoJSON(geojson) {
+  const filteredFeatures = (geojson.features || [])
+    .filter(feature => {
+      const props = feature.properties || {};
+      return props.SYMBOL === 'ZP';
+    })
+    .map(transformFeatureGeometry);
+
+  return {
+    type: 'FeatureCollection',
+    features: filteredFeatures
+  };
+}
+
+// Definicja EPSG:2177
+proj4.defs(
+  'EPSG:2177',
+  '+proj=tmerc +lat_0=0 +lon_0=18 +k=0.999923 +x_0=6500000 +y_0=0 +ellps=GRS80 +units=m +no_defs +type=crs'
+);
+
+const initialView = getViewFromUrl();
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  center: initialView.center,
+  zoom: initialView.zoom
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+map.on('moveend', () => {
+  updateUrlFromMap(map);
+});
+
+map.on('load', async () => {
+  try {
+    const geojson = await fetch(encodeURI('./mpzp_gdańsk_symbole.geojson')).then(r => r.json());
+
+    const transformedGeojson = filterAndTransformGeoJSON(geojson);
+
+    map.addSource('symbole', {
+      type: 'geojson',
+      data: transformedGeojson
     });
 
-    const zpStyle = new Style({
-      fill: new Fill({
-        color: 'rgba(60, 179, 113, 0.45)'
-      }),
-      stroke: new Stroke({
-        color: '#1f7a3d',
-        width: 1.5
-      })
+    map.addLayer({
+      id: 'fill',
+      type: 'fill',
+      source: 'symbole',
+      paint: {
+        'fill-color': '#4A90E2',
+        'fill-opacity': 0.25
+      }
     });
 
-    async function loadData() {
-      try {
-        const response = await fetch(encodeURI('./mpzp_gdańsk_symbole.geojson'));
-        if (!response.ok) {
-          throw new Error(`Błąd wczytywania pliku: ${response.status}`);
-        }
+    map.addLayer({
+      id: 'line',
+      type: 'line',
+      source: 'symbole',
+      paint: {
+        'line-color': '#1F4E79',
+        'line-width': 1
+      }
+    });
 
-        const geojson = await response.json();
+    map.addLayer({
+      id: 'labels',
+      type: 'symbol',
+      source: 'symbole',
+      layout: {
+        'text-field': ['get', 'SYMBOL'],
+        'text-size': 11,
+        'text-anchor': 'center'
+      },
+      paint: {
+        'text-color': '#111',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1
+      }
+    });
 
-        const allFeatures = new GeoJSON().readFeatures(geojson, {
-          dataProjection: 'EPSG:2177',
-          featureProjection: 'EPSG:3857'
-        });
-
-        const zpFeatures = allFeatures.filter(feature => {
-          return feature.get('SYMBOL') === 'ZP';
-        });
-
-        const vectorSource = new VectorSource({
-          features: zpFeatures
-        });
-
-        const vectorLayer = new VectorLayer({
-          source: vectorSource,
-          style: zpStyle
-        });
-
-        map.addLayer(vectorLayer);
-
-        if (zpFeatures.length > 0) {
-          map.getView().fit(vectorSource.getExtent(), {
-            padding: [40, 40, 40, 40],
-            duration: 800,
-            maxZoom: 16
-          });
-        } else {
-          alert('Nie znaleziono obiektów z SYMBOL = "ZP".');
-        }
-      } catch (error) {
-        console.error(error);
-        alert('Nie udało się wczytać danych. Sprawdź nazwę pliku i strukturę repozytorium.');
+    const bounds = new maplibregl.LngLatBounds();
+    for (const feature of transformedGeojson.features) {
+      if (feature.geometry && feature.geometry.coordinates) {
+        addCoordsToBounds(feature.geometry.coordinates, bounds);
       }
     }
 
-    loadData();
-  </script>
+    const params = new URLSearchParams(window.location.search);
+    const hasCustomView =
+      params.has('lng') &&
+      params.has('lat') &&
+      params.has('z');
+
+    if (!hasCustomView && !bounds.isEmpty()) {
+      map.fitBounds(bounds, { padding: 30 });
+    }
+
+    map.on('click', 'fill', (e) => {
+      const props = e.features[0].properties || {};
+      let html = '';
+
+      for (const [key, value] of Object.entries(props)) {
+        html += `<div><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
+      }
+
+      new maplibregl.Popup()
+        .setLngLat(e.lngLat)
+        .setHTML(html)
+        .addTo(map);
+    });
+
+    map.on('mouseenter', 'fill', () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.on('mouseleave', 'fill', () => {
+      map.getCanvas().style.cursor = '';
+    });
+
+    if (transformedGeojson.features.length === 0) {
+      alert('Nie znaleziono obiektów z SYMBOL = "ZP".');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Nie udało się wczytać pliku GeoJSON.');
+  }
+});
+</script>
+
 </body>
 </html>
