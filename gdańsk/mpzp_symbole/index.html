@@ -86,11 +86,27 @@ map.on('moveend', () => {
 
 map.on('load', async () => {
   try {
-    const geojson = await fetch(encodeURI('./gdańsk_mpzp_symbole.geojson')).then(r => r.json());
+    const response = await fetch('./gdansk_mpzp_symbole.geojson');
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} – nie znaleziono pliku`);
+    }
+
+    const text = await response.text();
+    console.log('Początek pliku:', text.slice(0, 300));
+
+    const geojson = JSON.parse(text);
+
+    // usuń stary wpis crs
+    delete geojson.crs;
+
+    if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) {
+      throw new Error('Plik nie jest poprawnym FeatureCollection');
+    }
 
     const allGeojson = {
       type: 'FeatureCollection',
-      features: geojson.features || []
+      features: geojson.features
     };
 
     map.addSource('symbole', {
@@ -172,12 +188,9 @@ map.on('load', async () => {
       map.getCanvas().style.cursor = '';
     });
 
-    if (allGeojson.features.length === 0) {
-      alert('GeoJSON nie zawiera żadnych obiektów.');
-    }
   } catch (err) {
-    console.error(err);
-    alert('Nie udało się wczytać pliku GeoJSON.');
+    console.error('Dokładny błąd:', err);
+    alert('Błąd: ' + err.message);
   }
 });
 </script>
