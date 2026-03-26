@@ -2,15 +2,15 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>MPZP Gdańsk – symbole</title>
+  <title>MPZP Kraków – W</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 
   <style>
-    html, body { margin:0; padding:0; height:100%; }
-    #map { width:100%; height:100vh; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { width: 100%; height: 100vh; }
   </style>
 </head>
 <body>
@@ -30,7 +30,7 @@ function getViewFromUrl() {
   const hasValidZoom = !isNaN(z) && z >= 0 && z <= 24;
 
   return {
-    center: (hasValidLng && hasValidLat) ? [lng, lat] : [18.6466, 54.3520],
+    center: (hasValidLng && hasValidLat) ? [lng, lat] : [19.9450, 50.0647],
     zoom: hasValidZoom ? z : 11
   };
 }
@@ -69,6 +69,23 @@ function addCoordsToBounds(coords, bounds) {
   }
 }
 
+async function loadGeoJsonFile(url) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} przy pobieraniu ${url}`);
+  }
+
+  const geojson = await response.json();
+  delete geojson.crs;
+
+  if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) {
+    throw new Error(`Plik ${url} nie jest poprawnym FeatureCollection`);
+  }
+
+  return geojson;
+}
+
 const initialView = getViewFromUrl();
 
 const map = new maplibregl.Map({
@@ -86,32 +103,30 @@ map.on('moveend', () => {
 
 map.on('load', async () => {
   try {
-    const response = await fetch('./gdansk_mpzp_symbole.geojson');
+    const files = [
+      './krakow_mpzp_symbole_0_7000.geojson',
+      './krakow_mpzp_symbole_7000_14000.geojson',
+      './krakow_mpzp_symbole_14000_21000.geojson'
+    ];
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} – nie znaleziono pliku`);
-    }
+    const geojsonParts = await Promise.all(files.map(loadGeoJsonFile));
 
-    const text = await response.text();
-    console.log('Początek pliku:', text.slice(0, 300));
-
-    const geojson = JSON.parse(text);
-
-    // usuń stary wpis crs
-    delete geojson.crs;
-
-    if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) {
-      throw new Error('Plik nie jest poprawnym FeatureCollection');
-    }
-
-    const allGeojson = {
+    const mergedGeojson = {
       type: 'FeatureCollection',
-      features: geojson.features
+      features: geojsonParts.flatMap(part => part.features)
+    };
+
+    const filteredGeojson = {
+      type: 'FeatureCollection',
+      features: mergedGeojson.features.filter(feature => {
+        const props = feature.properties || {};
+        return props.rodzaj_ozn === 'W';
+      })
     };
 
     map.addSource('symbole', {
       type: 'geojson',
-      data: allGeojson
+      data: filteredGeojson
     });
 
     map.addLayer({
@@ -139,7 +154,7 @@ map.on('load', async () => {
       type: 'symbol',
       source: 'symbole',
       layout: {
-        'text-field': ['get', 'SYMBOL'],
+        'text-field': ['get', 'rodzaj_ozn'],
         'text-size': 11,
         'text-anchor': 'center'
       },
@@ -151,7 +166,7 @@ map.on('load', async () => {
     });
 
     const bounds = new maplibregl.LngLatBounds();
-    for (const feature of allGeojson.features) {
+    for (const feature of filteredGeojson.features) {
       if (feature.geometry && feature.geometry.coordinates) {
         addCoordsToBounds(feature.geometry.coordinates, bounds);
       }
@@ -170,6 +185,7 @@ map.on('load', async () => {
     map.on('click', 'fill', (e) => {
       const props = e.features[0].properties || {};
       let html = '';
+
       for (const [key, value] of Object.entries(props)) {
         html += `<div><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
       }
@@ -187,6 +203,10 @@ map.on('load', async () => {
     map.on('mouseleave', 'fill', () => {
       map.getCanvas().style.cursor = '';
     });
+
+    if (filteredGeojson.features.length === 0) {
+      alert('Nie znaleziono obiektów z rodzaj_ozn = "W".');
+    }
 
   } catch (err) {
     console.error('Dokładny błąd:', err);
